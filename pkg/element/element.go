@@ -1,10 +1,32 @@
-// Package element provides structures to manage element-summary
+// Package element provides structures and methods to manage element-summary
 package element
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"sync"
+	"time"
+
+	"github.com/jadugnap/golang-fpl-101/pkg/client"
+	"github.com/jadugnap/golang-fpl-101/pkg/csv"
+	"github.com/jadugnap/golang-fpl-101/proto/pb"
+)
 
 // RawEndpoint to get element-summary response
 var (
 	RawEndpoint = "https://fantasy.premierleague.com/api/element-summary/%d/"
 )
+
+// Element for element-summary information
+type Element struct {
+	Client       client.GenericClient
+	PlayerIDlist []int
+	Res          SummaryResponse
+	PlayerID     int
+	PlayerName   string
+	Team         string
+}
 
 // SummaryResponse ... to skip go-lint
 type SummaryResponse struct {
@@ -105,4 +127,84 @@ type PastYear struct {
 	EndCost     int `json:"end_cost"`
 	Minutes     int `json:"minutes"`
 	TotalPoints int `json:"total_points"`
+}
+
+// GetElementSummaryToCsv from api/element-summary/
+func (e *Element) GetElementSummaryToCsv() {
+	start := time.Now()
+	defer func() {
+		log.Printf("Took %v to GetResponse from %v\n", time.Since(start), e.Client.Endpoint[:len(e.Client.Endpoint)-3])
+	}()
+
+	// use WaitGroup to getResponse concurrently
+	var wg sync.WaitGroup
+	for _, pID := range e.PlayerIDlist {
+		wg.Add(1)
+		go func(pID int, wg *sync.WaitGroup) {
+			defer wg.Done()
+
+			// new instance for each local Element in each goroutine
+			localE := Element{
+				Client:   e.Client,
+				PlayerID: pID,
+			}
+			localE.Client.Endpoint = fmt.Sprintf(e.Client.Endpoint, pID)
+			bodyBytes := localE.Client.GetResponse()
+
+			// define and use SummaryResponse here, no need to return
+			localE.Res = SummaryResponse{}
+			if err := json.Unmarshal(bodyBytes, &localE.Res); err != nil {
+				log.Printf("error json.Unmarshal(): %+v\n", err)
+				log.Printf("error on playerID: %+v\n", pID)
+				return // from go func()
+			}
+			localE.fillFixturesHistoryPerPlayer()
+
+			// store element-summary into csv
+			fixturePrefix := fmt.Sprintf("fpl-players/individual/fixtures/%+v-%+v-%+v", localE.Team, localE.PlayerName, pID)
+			matchPrefix := fmt.Sprintf("fpl-players/individual/pastmatches/%+v-%+v-%+v", localE.Team, localE.PlayerName, pID)
+			yearPrefix := fmt.Sprintf("fpl-players/individual/pastyears/%+v-%+v-%+v", localE.Team, localE.PlayerName, pID)
+			csv.StructSlice(localE.Res.Fixtures, fixturePrefix)
+			csv.StructSlice(localE.Res.PastMatches, matchPrefix)
+			csv.StructSlice(localE.Res.PastYears, yearPrefix)
+		}(pID, &wg)
+	}
+	wg.Wait()
+}
+
+// fillFixturesHistoryPerPlayer from teams to element summary
+func (e *Element) fillFixturesHistoryPerPlayer() {
+	e.PlayerName = pb.Player_Webname_name[int32(e.PlayerID)]
+	e.Team = "na"
+	if len(e.Res.Fixtures) == 0 {
+		fmt.Printf("No fixture found for playerName: %+v.\n", e.PlayerName)
+	} else if e.Res.Fixtures[0].IsHome {
+		e.Team = pb.Team_Shortname_name[int32(e.Res.Fixtures[0].TeamH)]
+	} else {
+		e.Team = pb.Team_Shortname_name[int32(e.Res.Fixtures[0].TeamA)]
+	}
+
+	for i, f := range e.Res.Fixtures {
+		e.Res.Fixtures[i].PlayerName = e.PlayerName
+		e.Res.Fixtures[i].Team = e.Team
+		if e.Res.Fixtures[i].IsHome {
+			e.Res.Fixtures[i].Opponent = pb.Team_Shortname_name[int32(f.TeamA)]
+		} else {
+			e.Res.Fixtures[i].Opponent = pb.Team_Shortname_name[int32(f.TeamH)]
+		}
+	}
+
+	for i, h := range e.Res.PastMatches {
+		e.Res.PastMatches[i].PlayerName = e.PlayerName
+		e.Res.PastMatches[i].Team = e.Team
+		e.Res.PastMatches[i].Opponent = pb.Team_Shortname_name[int32(h.OpponentID)]
+	}
+
+	for i := range e.Res.PastYears {
+		e.Res.PastYears[i].PlayerName = e.PlayerName
+		e.Res.PastYears[i].TeamNameNow = e.Team
+		e.Res.PastYears[i].TeamNameThen = "na"
+	}
+
+	return
 }

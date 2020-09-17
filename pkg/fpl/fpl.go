@@ -1,16 +1,29 @@
-// Package fpl provides structures to manage main fpl bootstrap-static
+// Package fpl provides structures and methods to manage main fpl bootstrap-static
 package fpl
 
 import (
+	"encoding/json"
+	"fmt"
+	"log"
 	"time"
 
+	"github.com/jadugnap/golang-fpl-101/pkg/client"
+	"github.com/jadugnap/golang-fpl-101/pkg/csv"
 	"github.com/jadugnap/golang-fpl-101/pkg/team"
+	"github.com/jadugnap/golang-fpl-101/proto/pb"
 )
 
-// Endpoint to get bootstrap-static fpl response
+// Endpoint to get main fpl response
 var (
 	Endpoint = "https://fantasy.premierleague.com/api/bootstrap-static/"
 )
+
+// FPL for main fpl information
+type FPL struct {
+	Client      client.GenericClient
+	Res         Response
+	Team2Player map[string][]team.Player
+}
 
 // Response from api/bootstrap-static/
 type Response struct {
@@ -106,4 +119,50 @@ type ChipPlay struct {
 type TopElementInfo struct {
 	ID     int `json:"id"`
 	Points int `json:"points"`
+}
+
+// GetFplResponseToCsv from api/bootstrap-static/
+func (f *FPL) GetFplResponseToCsv() {
+	start := time.Now()
+	defer func() {
+		log.Printf("Took %v to GetResponse from %v\n", time.Since(start), f.Client.Endpoint)
+	}()
+
+	bodyBytes := f.Client.GetResponse()
+	if err := json.Unmarshal(bodyBytes, &f.Res); err != nil {
+		log.Println("error json.Unmarshal():", err)
+		return
+	}
+
+	f.fillPlayersPerTeam()
+	for team, players := range f.Team2Player {
+		teamPrefix := fmt.Sprintf("fpl-players/%+v", team)
+		csv.StructSlice(players, teamPrefix)
+	}
+	csv.StructSlice(f.Res.Players, "fpl-players/allteam")
+	csv.StructSlice(f.Res.PlayerRoles, "fpl-roles")
+	csv.StructSlice(f.Res.Teams, "fpl-teams")
+	return
+}
+
+// fillPlayersPerTeam with positions and teams related info
+// input: *FPL
+func (f *FPL) fillPlayersPerTeam() {
+	f.Team2Player = make(map[string][]team.Player)
+	for i, p := range f.Res.Players {
+		playerName := pb.Player_Webname_name[int32(p.ID)]
+		teamName := pb.Team_Shortname_name[int32(p.TeamID)]
+		posName := pb.Player_Position_name[int32(p.RoleID)]
+		f.Res.Players[i].WebName = playerName
+		f.Res.Players[i].TeamName = teamName
+		f.Res.Players[i].RoleName = posName
+
+		if existingSlice, ok := f.Team2Player[teamName]; !ok {
+			// for new team, init new slice & append playerID / struct
+			f.Team2Player[teamName] = []team.Player{f.Res.Players[i]}
+		} else {
+			// for existing team, append playerID
+			f.Team2Player[teamName] = append(existingSlice, f.Res.Players[i])
+		}
+	}
 }
