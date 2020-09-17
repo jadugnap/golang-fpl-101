@@ -39,38 +39,43 @@ type Fixture struct {
 type History struct {
 	PlayerID   int `json:"element"`
 	PlayerName string
+
+	Value       int `json:"value"`
+	TotalPoints int `json:"total_points"`
+	Minutes     int `json:"minutes"`
+
 	Team       string
 	Opponent   string
 	OpponentID int  `json:"opponent_team"`
-	Round      int  `json:"round"`
 	WasHome    bool `json:"was_home"`
 	TeamHScore int  `json:"team_h_score"`
 	TeamAScore int  `json:"team_a_score"`
-	// Fixture          int       `json:"fixture"`
-	// KickoffTime      time.Time `json:"kickoff_time"`
-	// GoalsScored      int       `json:"goals_scored"`
-	// Assists          int       `json:"assists"`
-	// CleanSheets      int       `json:"clean_sheets"`
-	// GoalsConceded    int       `json:"goals_conceded"`
-	// OwnGoals         int       `json:"own_goals"`
-	// PenaltiesSaved   int       `json:"penalties_saved"`
-	// PenaltiesMissed  int       `json:"penalties_missed"`
-	// YellowCards      int       `json:"yellow_cards"`
-	// RedCards         int       `json:"red_cards"`
-	// Saves            int       `json:"saves"`
+
 	// Bps              int       `json:"bps"`
-	// Influence        string    `json:"influence"`
 	// Creativity       string    `json:"creativity"`
+	// Fixture          int       `json:"fixture"`
+	// IctIndex         string    `json:"ict_index"`
+	// Influence        string    `json:"influence"`
+	// KickoffTime      time.Time `json:"kickoff_time"`
+	// Round            int       `json:"round"`
+	// Selected         int       `json:"selected"`
 	// Threat           string    `json:"threat"`
 	// TransfersBalance int       `json:"transfers_balance"`
-	// Selected         int       `json:"selected"`
 	// TransfersIn      int       `json:"transfers_in"`
 	// TransfersOut     int       `json:"transfers_out"`
-	// Bonus            int       `json:"bonus"`
-	// IctIndex         string    `json:"ict_index"`
-	Minutes     int `json:"minutes"`
-	TotalPoints int `json:"total_points"`
-	Value       int `json:"value"`
+
+	Assists        int `json:"assists"`
+	Bonus          int `json:"bonus"`
+	CleanSheets    int `json:"clean_sheets"`
+	GoalsScored    int `json:"goals_scored"`
+	PenaltiesSaved int `json:"penalties_saved"`
+	Saves          int `json:"saves"`
+
+	GoalsConceded   int `json:"goals_conceded"`
+	OwnGoals        int `json:"own_goals"`
+	PenaltiesMissed int `json:"penalties_missed"`
+	RedCards        int `json:"red_cards"`
+	YellowCards     int `json:"yellow_cards"`
 }
 
 // PastYear ... to skip go-lint

@@ -12,6 +12,7 @@ import (
 	"github.com/jadugnap/golang-fpl-101/pkg/csv"
 	"github.com/jadugnap/golang-fpl-101/pkg/element"
 	"github.com/jadugnap/golang-fpl-101/pkg/fpl"
+	"github.com/jadugnap/golang-fpl-101/pkg/team"
 	"github.com/jadugnap/golang-fpl-101/proto/pb"
 )
 
@@ -25,12 +26,11 @@ func main() {
 	cli := http.Client{Timeout: time.Second * 10}
 
 	// get bootstrap-static data
-	fplResp := getFplResponse(cli, fpl.Endpoint)
+	fplResp := getFplResponseToCsv(cli, fpl.Endpoint)
 	if len(fplResp.Players) == 0 {
 		log.Println("error executing getFplResponse().")
 		return
 	}
-	getFplResponseToCsv(fplResp)
 
 	// get element-summary data
 	playerIDlist := []int{}
@@ -40,8 +40,11 @@ func main() {
 	getElementSummaryToCsv(cli, element.RawEndpoint, playerIDlist)
 }
 
-// getFplResponse struct from api/bootstrap-static/
-func getFplResponse(client http.Client, endpoint string) (fplResp *fpl.Response) {
+// getFplResponseToCsv struct from api/bootstrap-static/
+// input: http.Client, endpoint string
+// output: *fpl.Response
+// action: write csv
+func getFplResponseToCsv(client http.Client, endpoint string) (fplResp *fpl.Response) {
 	start := time.Now()
 	defer func() {
 		log.Printf("Took %v to GetResponse from %v\n", time.Since(start), endpoint)
@@ -53,23 +56,48 @@ func getFplResponse(client http.Client, endpoint string) (fplResp *fpl.Response)
 		return
 	}
 
-	fillTeamPositionNames(fplResp.Players)
+	team2players := fillPlayersPerTeam(fplResp.Players)
+	for team, players := range team2players {
+		teamPrefix := fmt.Sprintf("fpl-players/%+v", team)
+		csv.StructSlice(players, teamPrefix)
+	}
+	csv.StructSlice(fplResp.Players, "fpl-players/allteam")
+	csv.StructSlice(fplResp.PlayerRoles, "fpl-roles")
+	csv.StructSlice(fplResp.Teams, "fpl-teams")
 	return fplResp
 }
 
-// fillTeamPositionNames from positions and teams to players
-func fillTeamPositionNames(players []fpl.Player) {
-	for i, v := range players {
-		players[i].WebName = pb.Player_Webname_name[int32(v.ID)]
-		players[i].TeamName = pb.Team_Shortname_name[int32(v.Team)]
-		players[i].PositionName = pb.Player_Position_name[int32(v.Position)]
+// fillPlayersPerTeam with positions and teams related info
+// input: []team.Player{}
+// output: team2players (map[string][]team.Player{})
+func fillPlayersPerTeam(players []team.Player) (team2players map[string][]team.Player) {
+	// team2players = make(map[string][]int)
+	team2players = make(map[string][]team.Player)
+	for i, p := range players {
+		playerName := pb.Player_Webname_name[int32(p.ID)]
+		teamName := pb.Team_Shortname_name[int32(p.TeamID)]
+		posName := pb.Player_Position_name[int32(p.RoleID)]
+		players[i].WebName = playerName
+		players[i].TeamName = teamName
+		players[i].RoleName = posName
+
+		if existingSlice, ok := team2players[teamName]; !ok {
+			// for new team, init new slice & append playerID / struct
+			team2players[teamName] = []team.Player{players[i]}
+		} else {
+			// for existing team, append playerID
+			team2players[teamName] = append(existingSlice, players[i])
+		}
 	}
+	return team2players
 }
 
-// fillFixturesAndHistory from teams to element summary
-func fillFixturesAndHistory(sr element.SummaryResponse, playerID int) {
-	playerName := pb.Player_Webname_name[int32(playerID)]
-	teamName := "n/a"
+// fillFixturesHistoryPerPlayer from teams to element summary
+// input: element.SummaryResponse{}
+// output: (playerName, teamName)
+func fillFixturesHistoryPerPlayer(sr element.SummaryResponse, playerID int) (playerName, teamName string) {
+	playerName = pb.Player_Webname_name[int32(playerID)]
+	teamName = "n/a"
 	if len(sr.Fixtures) == 0 {
 		fmt.Printf("No fixture found for playerName: %+v.\n", playerName)
 	} else if sr.Fixtures[0].IsHome {
@@ -99,22 +127,18 @@ func fillFixturesAndHistory(sr element.SummaryResponse, playerID int) {
 		sr.PastYears[i].TeamNameNow = teamName
 		sr.PastYears[i].TeamNameThen = "n/a"
 	}
-}
 
-func getFplResponseToCsv(fplResp *fpl.Response) {
-	// store bootstrap-static into csv
-	csv.StructSlice(fplResp.Players, "fpl-players")
-	csv.StructSlice(fplResp.PlayerPositions, "fpl-positions")
-	csv.StructSlice(fplResp.Teams, "fpl-teams")
-	// // testing ability to recover() from panic()
-	// csv.StructSlice(fplResp.Players[0], "fpl-testing-player0")
+	return
 }
 
 // getElementSummaryToCsv from api/element-summary/
+// input: http.Client, endpoint string, []int
+// output: void
+// action: write csv
 func getElementSummaryToCsv(client http.Client, rawEndpoint string, playerIDlist []int) {
 	start := time.Now()
 	defer func() {
-		log.Printf("Took %v to GetResponse from %v\n", time.Since(start), rawEndpoint[:len(rawEndpoint)-2])
+		log.Printf("Took %v to GetResponse from %v\n", time.Since(start), rawEndpoint[:len(rawEndpoint)-3])
 	}()
 
 	// use WaitGroup to getResponse concurrently
@@ -134,12 +158,13 @@ func getElementSummaryToCsv(client http.Client, rawEndpoint string, playerIDlist
 				log.Printf("error on playerID: %+v\n", pID)
 				return // from go func()
 			}
-			fillFixturesAndHistory(summaryResp, pID)
+			// fillFixturesHistoryPerPlayer(summaryResp, pID)
+			pName, team := fillFixturesHistoryPerPlayer(summaryResp, pID)
 
 			// store element-summary into csv
-			fixturePrefix := fmt.Sprintf("fpl-player-%v-fixtures", pID)
-			matchPrefix := fmt.Sprintf("fpl-player-%v-pastmatches", pID)
-			yearPrefix := fmt.Sprintf("fpl-player-%v-pastyears", pID)
+			fixturePrefix := fmt.Sprintf("fpl-players/individual/fixtures/%+v-%+v-%+v", team, pName, pID)
+			matchPrefix := fmt.Sprintf("fpl-players/individual/pastmatches/%+v-%+v-%+v", team, pName, pID)
+			yearPrefix := fmt.Sprintf("fpl-players/individual/pastyears/%+v-%+v-%+v", team, pName, pID)
 			csv.StructSlice(summaryResp.Fixtures, fixturePrefix)
 			csv.StructSlice(summaryResp.PastMatches, matchPrefix)
 			csv.StructSlice(summaryResp.PastYears, yearPrefix)
@@ -149,6 +174,8 @@ func getElementSummaryToCsv(client http.Client, rawEndpoint string, playerIDlist
 }
 
 // getResponse in general []byte
+// input: http.Client, endpoint string
+// output: []byte
 func getResponse(client http.Client, endpoint string) []byte {
 	req, _ := http.NewRequest(http.MethodGet, endpoint, nil)
 	// any non-default "User-Agent", to resolve empty response bug

@@ -28,13 +28,11 @@ message Team {
         WHU = 19;
         WOL = 20;
     }
-    repeated Player player = 3;
 }
 
 message Player {
     int64 id = 1;
-    int32 posid = 2;
-    Position position = 3;
+    Position position = 2;
     enum Position {
         unused = 0;
         GKP = 1;
@@ -42,7 +40,7 @@ message Player {
         MID = 3;
         FWD = 4;
     }
-    Webname webname = 4;
+    Webname webname = 3;
     enum Webname {
         unused_webname = 0;
         Ozil = 1;
