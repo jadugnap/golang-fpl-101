@@ -139,6 +139,12 @@ func (e *Element) GetElementSummaryToCsv() {
 	// use WaitGroup to getResponse concurrently
 	var wg sync.WaitGroup
 	for _, pID := range e.PlayerIDlist {
+		// filter out entries from (f *FPL) addSummaryRow()
+		if pID > 1000 {
+			continue
+		}
+
+		// start WaitGroup counter & the goroutine
 		wg.Add(1)
 		go func(pID int, wg *sync.WaitGroup) {
 			defer wg.Done()

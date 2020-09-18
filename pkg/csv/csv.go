@@ -56,6 +56,7 @@ func StructSlice(myStructSlice interface{}, filePrefix string) {
 
 func appendEachRow(writer *csv.Writer, headerTypes []reflect.Type, row interface{}) {
 	boolType := reflect.TypeOf((bool)(false))
+	// floatType := reflect.TypeOf((float64)(0.0))
 	intType := reflect.TypeOf((int)(0))
 	stringType := reflect.TypeOf((string)(""))
 
@@ -67,13 +68,16 @@ func appendEachRow(writer *csv.Writer, headerTypes []reflect.Type, row interface
 		case boolType:
 			str := strconv.FormatBool(v.Field(i).Bool())
 			allColumns = append(allColumns, str)
+		// case floatType:
+		// 	str := strconv.FormatFloat(v.Field(i).Float(), 'f', 6, 64)
+		// 	allColumns = append(allColumns, str)
 		case intType:
 			str := strconv.FormatInt(v.Field(i).Int(), 10)
 			allColumns = append(allColumns, str)
 		case stringType:
 			allColumns = append(allColumns, v.Field(i).String())
 		default:
-			log.Panic("csv.StructSlice() only accept bool, int, or string. headerType:", headerTypes[i])
+			log.Panic("csv.StructSlice() only accept bool, float, int, or string. headerType:", headerTypes[i])
 		}
 	}
 	err := writer.Write(allColumns)

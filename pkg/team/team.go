@@ -100,17 +100,17 @@ type Player struct {
 	// TransfersInEvent                 int         `json:"transfers_in_event"`
 	// TransfersOutEvent                int         `json:"transfers_out_event"`
 	// YellowCards                      int         `json:"yellow_cards"`
-	// SelectedByPercent string `json:"selected_by_percent"`
-	// TransfersIn       int    `json:"transfers_in"`
-	// TransfersOut      int    `json:"transfers_out"`
-	// Bonus             int    `json:"bonus"`
-	// Bps               int    `json:"bps"`
-	// PointsPerGame     string `json:"points_per_game"`
+	// SelectedByPercent                string      `json:"selected_by_percent"`
+	// TransfersIn                      int         `json:"transfers_in"`
+	// TransfersOut                     int         `json:"transfers_out"`
+	// Bonus                            int         `json:"bonus"`
+	// Bps                              int         `json:"bps"`
+	// PointsPerGame                    string      `json:"points_per_game"`
 	IctIndex    string `json:"ict_index"`
-	Minutes     int    `json:"minutes"`
+	ValueForm   string `json:"value_form"`
+	ValueSeason string `json:"value_season"`
 	Form        string `json:"form"`
 	TotalPoints int    `json:"total_points"`
 	NowCost     int    `json:"now_cost"`
-	ValueForm   string `json:"value_form"`
-	ValueSeason string `json:"value_season"`
+	Minutes     int    `json:"minutes"`
 }

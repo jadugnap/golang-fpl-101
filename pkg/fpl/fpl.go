@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strconv"
 	"time"
 
 	"github.com/jadugnap/golang-fpl-101/pkg/client"
@@ -23,6 +24,8 @@ type FPL struct {
 	Client      client.GenericClient
 	Res         Response
 	Team2Player map[string][]team.Player
+	Team        string
+	Players     []team.Player
 }
 
 // Response from api/bootstrap-static/
@@ -136,8 +139,11 @@ func (f *FPL) GetFplResponseToCsv() {
 
 	f.fillPlayersPerTeam()
 	for team, players := range f.Team2Player {
+		f.Team = team
+		f.Players = players
+		f.addSummaryRow()
 		teamPrefix := fmt.Sprintf("fpl-players/%+v", team)
-		csv.StructSlice(players, teamPrefix)
+		csv.StructSlice(f.Players, teamPrefix)
 	}
 	csv.StructSlice(f.Res.Players, "fpl-players/allteam")
 	csv.StructSlice(f.Res.PlayerRoles, "fpl-roles")
@@ -165,4 +171,72 @@ func (f *FPL) fillPlayersPerTeam() {
 			f.Team2Player[teamName] = append(existingSlice, f.Res.Players[i])
 		}
 	}
+}
+
+// addSummaryRow with team cumulative information per team
+func (f *FPL) addSummaryRow() {
+	if len(f.Players) == 0 {
+		log.Println("unable to addSummaryRow() due to empty f.Players")
+		return
+	}
+	p0 := f.Players[0]
+	summary := team.Player{
+		ID:       p0.TeamID + 1000,
+		WebName:  fmt.Sprintf("AllPlayed_%s_Players", p0.TeamName),
+		TeamName: p0.TeamName,
+		RoleName: "all",
+		TeamID:   p0.TeamID,
+		RoleID:   -1,
+		// IctIndex:    "0",
+		// Form:        "-1",
+		// ValueForm:   "-1",
+		// ValueSeason: "-1",
+		Minutes:     0,
+		TotalPoints: 0,
+		NowCost:     0,
+	}
+
+	// for int, sum up all the values
+	// for float, convert strings => sum up all floats => string
+	tempIctIndex := 0.0
+	tempValueForm := 0.0
+	tempValueSeason := 0.0
+	tempForm := 0.0
+	pCount := 0.0
+	for _, player := range f.Players {
+		// filter out players with 0 minute
+		if player.Minutes == 0 {
+			continue
+		}
+
+		pCount++
+		// convert strings => sum up all floats
+		pIctIndex, _ := strconv.ParseFloat(player.IctIndex, 64)
+		tempIctIndex += pIctIndex
+
+		pValueForm, _ := strconv.ParseFloat(player.ValueForm, 64)
+		tempValueForm += pValueForm
+
+		pValueSeason, _ := strconv.ParseFloat(player.ValueSeason, 64)
+		tempValueSeason += pValueSeason
+
+		pForm, _ := strconv.ParseFloat(player.Form, 64)
+		tempForm += pForm
+
+		// sum up all ints
+		summary.TotalPoints += player.TotalPoints
+		summary.NowCost += player.NowCost
+		summary.Minutes += player.Minutes
+	}
+	// convert floats => string
+	summary.IctIndex = fmt.Sprintf("%f", tempIctIndex/pCount)
+	// summary.ValueForm = fmt.Sprintf("%f", tempValueForm)
+	summary.ValueForm = fmt.Sprintf("%f", tempForm*10.0/float64(summary.NowCost))
+	summary.ValueSeason = fmt.Sprintf("%f", float64(summary.TotalPoints)*10.0/float64(summary.NowCost))
+	// summary.ValueSeason = fmt.Sprintf("%f", tempValueSeason)
+	summary.Form = fmt.Sprintf("%f", tempForm)
+
+	f.Players = append([]team.Player{summary}, f.Players...)
+	f.Res.Players = append([]team.Player{summary}, f.Res.Players...)
+	return
 }
