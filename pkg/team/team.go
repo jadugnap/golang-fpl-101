@@ -105,12 +105,15 @@ type Player struct {
 	// TransfersOut                     int         `json:"transfers_out"`
 	// Bonus                            int         `json:"bonus"`
 	// Bps                              int         `json:"bps"`
-	// PointsPerGame                    string      `json:"points_per_game"`
-	IctIndex    string `json:"ict_index"`
-	ValueForm   string `json:"value_form"`
-	ValueSeason string `json:"value_season"`
-	Form        string `json:"form"`
-	TotalPoints int    `json:"total_points"`
-	NowCost     int    `json:"now_cost"`
-	Minutes     int    `json:"minutes"`
+	PlayerCount        int
+	RegularPlayerCount int
+	PointsPerGame      string `json:"points_per_game"`
+	OppPointsPerGame   string
+	Form               string `json:"form"`
+	TotalPoints        int    `json:"total_points"`
+	ValueForm          string `json:"value_form"`
+	ValueSeason        string `json:"value_season"`
+	IctIndex           string `json:"ict_index"`
+	NowCost            int    `json:"now_cost"`
+	Minutes            int    `json:"minutes"`
 }

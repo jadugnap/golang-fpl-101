@@ -43,4 +43,8 @@ func main() {
 	}
 	// get element-summary data
 	eInfo.GetElementSummaryToCsv()
+
+	// get necessary data from eInfo
+	fplInfo.Team2Gw2Points = eInfo.Team2Gw2Points
+	fplInfo.ToCsv()
 }

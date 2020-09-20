@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"strconv"
 	"time"
 
@@ -21,11 +22,12 @@ var (
 
 // FPL for main fpl information
 type FPL struct {
-	Client      client.GenericClient
-	Res         Response
-	Team2Player map[string][]team.Player
-	Team        string
-	Players     []team.Player
+	Client         client.GenericClient
+	Res            Response
+	Team2Player    map[string][]team.Player
+	Team           string
+	Players        []team.Player
+	Team2Gw2Points map[string]map[int]int
 }
 
 // Response from api/bootstrap-static/
@@ -138,6 +140,23 @@ func (f *FPL) GetFplResponseToCsv() {
 	}
 
 	f.fillPlayersPerTeam()
+
+	// for team, players := range f.Team2Player {
+	// 	f.Team = team
+	// 	f.Players = players
+	// 	f.addSummaryRow()
+	// 	teamPrefix := fmt.Sprintf("fpl-players/%+v", team)
+	// 	csv.StructSlice(f.Players, teamPrefix)
+	// }
+	// csv.StructSlice(f.Res.Players, "fpl-players/allteam")
+	// csv.StructSlice(f.Res.PlayerRoles, "fpl-roles")
+	// csv.StructSlice(f.Res.Teams, "fpl-teams")
+	return
+}
+
+// ToCsv from Fpl Response info
+func (f *FPL) ToCsv() {
+	// f.fillOpponentPoints()
 	for team, players := range f.Team2Player {
 		f.Team = team
 		f.Players = players
@@ -164,10 +183,10 @@ func (f *FPL) fillPlayersPerTeam() {
 		f.Res.Players[i].RoleName = posName
 
 		if existingSlice, ok := f.Team2Player[teamName]; !ok {
-			// for new team, init new slice & append playerID / struct
+			// for new team, init new slice & append struct
 			f.Team2Player[teamName] = []team.Player{f.Res.Players[i]}
 		} else {
-			// for existing team, append playerID
+			// for existing team, append struct
 			f.Team2Player[teamName] = append(existingSlice, f.Res.Players[i])
 		}
 	}
@@ -186,57 +205,72 @@ func (f *FPL) addSummaryRow() {
 		TeamName: p0.TeamName,
 		RoleName: "all",
 		TeamID:   p0.TeamID,
-		RoleID:   -1,
-		// IctIndex:    "0",
-		// Form:        "-1",
-		// ValueForm:   "-1",
-		// ValueSeason: "-1",
-		Minutes:     0,
+		RoleID:   0,
+		// PlayerCount:        "-1",
+		// RegularPlayerCount: "-1",
+		// PointsPerGame:      "-1",
+		// OppPointsPerGame:   "-1",
+		// Form:               "-1",
 		TotalPoints: 0,
-		NowCost:     0,
+		// ValueForm:          "-1",
+		// ValueSeason:        "-1",
+		// IctIndex:           "-1",
+		NowCost: 0,
+		Minutes: 0,
 	}
 
 	// for int, sum up all the values
-	// for float, convert strings => sum up all floats => string
-	tempIctIndex := 0.0
-	tempValueForm := 0.0
-	tempValueSeason := 0.0
-	tempForm := 0.0
-	pCount := 0.0
 	for _, player := range f.Players {
-		// filter out players with 0 minute
-		if player.Minutes == 0 {
-			continue
-		}
-
-		pCount++
-		// convert strings => sum up all floats
-		pIctIndex, _ := strconv.ParseFloat(player.IctIndex, 64)
-		tempIctIndex += pIctIndex
-
-		pValueForm, _ := strconv.ParseFloat(player.ValueForm, 64)
-		tempValueForm += pValueForm
-
-		pValueSeason, _ := strconv.ParseFloat(player.ValueSeason, 64)
-		tempValueSeason += pValueSeason
-
-		pForm, _ := strconv.ParseFloat(player.Form, 64)
-		tempForm += pForm
-
-		// sum up all ints
 		summary.TotalPoints += player.TotalPoints
 		summary.NowCost += player.NowCost
 		summary.Minutes += player.Minutes
 	}
+	oppTotalPoints := float64(f.calcOpponentPoints())
+	matchPlayed := math.Round(float64(summary.Minutes) / 990)
+	currentPrice := float64(summary.NowCost) / 10.0
+
+	// for float, convert strings => sum up all floats => string
+	tempIctIndex := 0.0
+	tempForm := 0.0
+	// pCount := 0.0
+	// rpCount := 0.0
+	for _, player := range f.Players {
+		if player.Minutes <= 0 {
+			continue
+		} else if player.Minutes >= int(matchPlayed*90) {
+			// shortlist players with long minutes played (>60 per match)
+			summary.RegularPlayerCount++
+		}
+		summary.PlayerCount++
+
+		// convert strings => sum up all floats
+		pIctIndex, _ := strconv.ParseFloat(player.IctIndex, 64)
+		tempIctIndex += pIctIndex
+		pForm, _ := strconv.ParseFloat(player.Form, 64)
+		tempForm += pForm
+	}
+
 	// convert floats => string
-	summary.IctIndex = fmt.Sprintf("%f", tempIctIndex/pCount)
-	// summary.ValueForm = fmt.Sprintf("%f", tempValueForm)
-	summary.ValueForm = fmt.Sprintf("%f", tempForm*10.0/float64(summary.NowCost))
-	summary.ValueSeason = fmt.Sprintf("%f", float64(summary.TotalPoints)*10.0/float64(summary.NowCost))
-	// summary.ValueSeason = fmt.Sprintf("%f", tempValueSeason)
-	summary.Form = fmt.Sprintf("%f", tempForm)
+	summary.IctIndex = fmt.Sprintf("%.2f", tempIctIndex/float64(summary.RegularPlayerCount))
+	summary.ValueForm = fmt.Sprintf("%.2f", tempForm/currentPrice)
+	summary.ValueSeason = fmt.Sprintf("%.2f", float64(summary.TotalPoints)/currentPrice)
+	summary.Form = fmt.Sprintf("%.2f", tempForm)
+	summary.OppPointsPerGame = fmt.Sprintf("%.2f", oppTotalPoints/matchPlayed)
+	summary.PointsPerGame = fmt.Sprintf("%.2f", float64(summary.TotalPoints)/matchPlayed)
 
 	f.Players = append([]team.Player{summary}, f.Players...)
 	f.Res.Players = append([]team.Player{summary}, f.Res.Players...)
 	return
+}
+
+// calcOpponentPoints from a map obtained from element-summary info
+func (f *FPL) calcOpponentPoints() (oppTotalPoints int) {
+	for team, innerMap := range f.Team2Gw2Points {
+		if team == f.Team {
+			for _, gameweekPoint := range innerMap {
+				oppTotalPoints += gameweekPoint
+			}
+		}
+	}
+	return oppTotalPoints
 }

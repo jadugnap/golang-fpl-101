@@ -20,12 +20,14 @@ var (
 
 // Element for element-summary information
 type Element struct {
-	Client       client.GenericClient
-	PlayerIDlist []int
-	Res          SummaryResponse
-	PlayerID     int
-	PlayerName   string
-	Team         string
+	Client         client.GenericClient
+	PlayerIDlist   []int
+	Res            SummaryResponse
+	HistoryList    []History
+	Team2Gw2Points map[string]map[int]int
+	PlayerID       int
+	PlayerName     string
+	Team           string
 }
 
 // SummaryResponse ... to skip go-lint
@@ -48,12 +50,12 @@ type Fixture struct {
 	IsHome     bool `json:"is_home"`
 	// TeamHScore           interface{} `json:"team_h_score"`
 	// TeamAScore           interface{} `json:"team_a_score"`
-	// Code                 int       `json:"code"`
-	// Event                int       `json:"event"`
-	// Finished             bool      `json:"finished"`
-	// KickoffTime          time.Time `json:"kickoff_time"`
-	// Minutes              int       `json:"minutes"`
-	// ProvisionalStartTime bool      `json:"provisional_start_time"`
+	// Code                 int         `json:"code"`
+	// Event                int         `json:"event"`
+	// Finished             bool        `json:"finished"`
+	// KickoffTime          time.Time   `json:"kickoff_time"`
+	// Minutes              int         `json:"minutes"`
+	// ProvisionalStartTime bool        `json:"provisional_start_time"`
 	Gameweek string `json:"event_name"`
 }
 
@@ -69,6 +71,7 @@ type History struct {
 	Team       string
 	Opponent   string
 	OpponentID int  `json:"opponent_team"`
+	Round      int  `json:"round"`
 	WasHome    bool `json:"was_home"`
 	TeamHScore int  `json:"team_h_score"`
 	TeamAScore int  `json:"team_a_score"`
@@ -79,7 +82,6 @@ type History struct {
 	// IctIndex         string    `json:"ict_index"`
 	// Influence        string    `json:"influence"`
 	// KickoffTime      time.Time `json:"kickoff_time"`
-	// Round            int       `json:"round"`
 	// Selected         int       `json:"selected"`
 	// Threat           string    `json:"threat"`
 	// TransfersBalance int       `json:"transfers_balance"`
@@ -136,6 +138,7 @@ func (e *Element) GetElementSummaryToCsv() {
 		log.Printf("Took %v to GetResponse from %v\n", time.Since(start), e.Client.Endpoint[:len(e.Client.Endpoint)-3])
 	}()
 
+	historyQueue := make(chan []History, len(e.PlayerIDlist))
 	// use WaitGroup to getResponse concurrently
 	var wg sync.WaitGroup
 	for _, pID := range e.PlayerIDlist {
@@ -165,6 +168,7 @@ func (e *Element) GetElementSummaryToCsv() {
 				return // from go func()
 			}
 			localE.fillFixturesHistoryPerPlayer()
+			historyQueue <- localE.Res.PastMatches
 
 			// store element-summary into csv
 			fixturePrefix := fmt.Sprintf("fpl-players/individual/fixtures/%+v-%+v-%+v", localE.Team, localE.PlayerName, pID)
@@ -176,6 +180,14 @@ func (e *Element) GetElementSummaryToCsv() {
 		}(pID, &wg)
 	}
 	wg.Wait()
+	close(historyQueue)
+
+	e.Team2Gw2Points = make(map[string]map[int]int)
+	for historyList := range historyQueue {
+		e.HistoryList = historyList
+		e.fillOpponentPoints()
+	}
+	// fmt.Printf("e.Team2Gw2Points: %+v\n", e.Team2Gw2Points)
 }
 
 // fillFixturesHistoryPerPlayer from teams to element summary
@@ -203,7 +215,8 @@ func (e *Element) fillFixturesHistoryPerPlayer() {
 	for i, h := range e.Res.PastMatches {
 		e.Res.PastMatches[i].PlayerName = e.PlayerName
 		e.Res.PastMatches[i].Team = e.Team
-		e.Res.PastMatches[i].Opponent = pb.Team_Shortname_name[int32(h.OpponentID)]
+		opp := pb.Team_Shortname_name[int32(h.OpponentID)]
+		e.Res.PastMatches[i].Opponent = opp
 	}
 
 	for i := range e.Res.PastYears {
@@ -213,4 +226,26 @@ func (e *Element) fillFixturesHistoryPerPlayer() {
 	}
 
 	return
+}
+
+// fillOpponentPoints from element summary to a map
+func (e *Element) fillOpponentPoints() {
+	for i, h := range e.HistoryList {
+		opp := pb.Team_Shortname_name[int32(h.OpponentID)]
+
+		// check whether inner map for opposing team "opp" exists
+		if _, ok := e.Team2Gw2Points[opp]; !ok {
+			// for new team, init new inner map & append GW1 totalPoints
+			e.Team2Gw2Points[opp] = make(map[int]int)
+			e.Team2Gw2Points[opp][e.HistoryList[i].Round] = e.HistoryList[i].TotalPoints
+		} else {
+			// for existing inner map, check whether gameweek key exists
+			if _, ok := e.Team2Gw2Points[opp][e.HistoryList[i].Round]; !ok {
+				// for new GW, create new entry
+				e.Team2Gw2Points[opp][e.HistoryList[i].Round] = e.HistoryList[i].TotalPoints
+			} else {
+				e.Team2Gw2Points[opp][e.HistoryList[i].Round] += e.HistoryList[i].TotalPoints
+			}
+		}
+	}
 }
