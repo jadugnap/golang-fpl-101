@@ -20,14 +20,19 @@ var (
 
 // Element for element-summary information
 type Element struct {
-	Client         client.GenericClient
-	PlayerIDlist   []int
-	Res            SummaryResponse
-	HistoryList    []History
-	Team2Gw2Points map[string]map[int]int
-	PlayerID       int
-	PlayerName     string
-	Team           string
+	Client            client.GenericClient
+	PlayerIDlist      []int
+	Player2Proportion map[string]float64
+	Team2TotalForm    map[string]float64
+	Res               SummaryResponse
+	CombinedFixtures  []Fixture
+	FixtureList       []Fixture
+	HistoryList       []History
+	Team2Gw2Points    map[string]map[int]int
+	PlayerID          int
+	PlayerName        string
+	Team              string
+	Opp               string
 }
 
 // SummaryResponse ... to skip go-lint
@@ -56,7 +61,8 @@ type Fixture struct {
 	// KickoffTime          time.Time   `json:"kickoff_time"`
 	// Minutes              int         `json:"minutes"`
 	// ProvisionalStartTime bool        `json:"provisional_start_time"`
-	Gameweek string `json:"event_name"`
+	Gameweek        string `json:"event_name"`
+	PredictedPoints string
 }
 
 // History ... to skip go-lint
@@ -138,6 +144,7 @@ func (e *Element) GetElementSummaryToCsv() {
 		log.Printf("Took %v to GetResponse from %v\n", time.Since(start), e.Client.Endpoint[:len(e.Client.Endpoint)-3])
 	}()
 
+	fixtureQueue := make(chan []Fixture, len(e.PlayerIDlist))
 	historyQueue := make(chan []History, len(e.PlayerIDlist))
 	// use WaitGroup to getResponse concurrently
 	var wg sync.WaitGroup
@@ -168,26 +175,36 @@ func (e *Element) GetElementSummaryToCsv() {
 				return // from go func()
 			}
 			localE.fillFixturesHistoryPerPlayer()
+			fixtureQueue <- localE.Res.Fixtures
 			historyQueue <- localE.Res.PastMatches
 
 			// store element-summary into csv
-			fixturePrefix := fmt.Sprintf("fpl-players/individual/fixtures/%+v-%+v-%+v", localE.Team, localE.PlayerName, pID)
+			// fixturePrefix := fmt.Sprintf("fpl-players/individual/fixtures/%+v-%+v-%+v", localE.Team, localE.PlayerName, pID)
 			matchPrefix := fmt.Sprintf("fpl-players/individual/pastmatches/%+v-%+v-%+v", localE.Team, localE.PlayerName, pID)
 			yearPrefix := fmt.Sprintf("fpl-players/individual/pastyears/%+v-%+v-%+v", localE.Team, localE.PlayerName, pID)
-			csv.StructSlice(localE.Res.Fixtures, fixturePrefix)
+			// csv.StructSlice(localE.Res.Fixtures, fixturePrefix)
 			csv.StructSlice(localE.Res.PastMatches, matchPrefix)
 			csv.StructSlice(localE.Res.PastYears, yearPrefix)
 		}(pID, &wg)
 	}
 	wg.Wait()
 	close(historyQueue)
+	close(fixtureQueue)
 
 	e.Team2Gw2Points = make(map[string]map[int]int)
 	for historyList := range historyQueue {
 		e.HistoryList = historyList
 		e.fillOpponentPoints()
 	}
-	// fmt.Printf("e.Team2Gw2Points: %+v\n", e.Team2Gw2Points)
+	for fixtureList := range fixtureQueue {
+		e.FixtureList = fixtureList
+		e.PlayerName = e.FixtureList[0].PlayerName
+		e.PlayerID = int(pb.Player_Webname_value[e.PlayerName])
+		e.fixtureToCsv()
+	}
+	// fmt.Printf("Debug e.Team2Gw2Points: %+v\n", e.Team2Gw2Points)
+	e.CombinedFixtures = append(e.CombinedFixtures, e.FixtureList...)
+	csv.StructSlice(e.CombinedFixtures, "fpl-players/allfixtures")
 }
 
 // fillFixturesHistoryPerPlayer from teams to element summary
@@ -202,14 +219,8 @@ func (e *Element) fillFixturesHistoryPerPlayer() {
 		e.Team = pb.Team_Shortname_name[int32(e.Res.Fixtures[0].TeamA)]
 	}
 
-	for i, f := range e.Res.Fixtures {
+	for i := range e.Res.Fixtures {
 		e.Res.Fixtures[i].PlayerName = e.PlayerName
-		e.Res.Fixtures[i].Team = e.Team
-		if e.Res.Fixtures[i].IsHome {
-			e.Res.Fixtures[i].Opponent = pb.Team_Shortname_name[int32(f.TeamA)]
-		} else {
-			e.Res.Fixtures[i].Opponent = pb.Team_Shortname_name[int32(f.TeamH)]
-		}
 	}
 
 	for i, h := range e.Res.PastMatches {
@@ -248,4 +259,44 @@ func (e *Element) fillOpponentPoints() {
 			}
 		}
 	}
+}
+
+// calcOpponentPoints from a map obtained from element-summary info
+func (e *Element) fixtureToCsv() {
+	for i, f := range e.FixtureList {
+		e.FixtureList[i].PlayerName = e.PlayerName
+		e.Team = "na"
+		e.Opp = "na"
+		if e.FixtureList[i].IsHome {
+			e.Team = pb.Team_Shortname_name[int32(f.TeamH)]
+			e.Opp = pb.Team_Shortname_name[int32(f.TeamA)]
+		} else {
+			e.Team = pb.Team_Shortname_name[int32(f.TeamA)]
+			e.Opp = pb.Team_Shortname_name[int32(f.TeamH)]
+		}
+		e.FixtureList[i].Team = e.Team
+		e.FixtureList[i].Opponent = e.Opp
+
+		teamPPG := 0.0
+		oppPPG := 0.0
+		oppTotalPoints := 0
+		for t, innerMap := range e.Team2Gw2Points {
+			if t == e.Opp {
+				for _, gameweekPoint := range innerMap {
+					oppTotalPoints += gameweekPoint
+				}
+				oppPPG = float64(oppTotalPoints) / float64(len(innerMap))
+			}
+			if t == e.Team {
+				teamPPG = e.Team2TotalForm[e.Team] / float64(len(innerMap))
+			}
+		}
+		e.FixtureList[i].PredictedPoints = fmt.Sprintf("%.2f", e.Player2Proportion[e.PlayerName]/100*0.5*(teamPPG+oppPPG))
+		// fmt.Printf("Debug e.PlayerName: %+v | e.Player2Proportion: %+v\n", e.PlayerName, e.Player2Proportion[e.PlayerName])
+		// fmt.Printf("Debug teamPPG: %+v | oppPPG: %+v\n", teamPPG, oppPPG)
+	}
+	e.CombinedFixtures = append(e.CombinedFixtures, e.FixtureList...)
+
+	fixturePrefix := fmt.Sprintf("fpl-players/individual/fixtures/%+v-%+v-%+v", e.Team, e.PlayerName, e.PlayerID)
+	csv.StructSlice(e.FixtureList, fixturePrefix)
 }

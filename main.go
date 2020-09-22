@@ -26,7 +26,7 @@ func main() {
 	}
 	fplInfo.Client.Endpoint = fpl.Endpoint
 	// get bootstrap-static data
-	fplInfo.GetFplResponseToCsv()
+	fplInfo.GetFplResponse()
 	if len(fplInfo.Res.Players) == 0 {
 		log.Println("error executing getFplResponse().")
 		return
@@ -41,6 +41,8 @@ func main() {
 	for _, p := range fplInfo.Res.Players {
 		eInfo.PlayerIDlist = append(eInfo.PlayerIDlist, p.ID)
 	}
+	eInfo.Team2TotalForm = fplInfo.Team2TotalForm
+	eInfo.Player2Proportion = fplInfo.Player2Proportion
 	// get element-summary data
 	eInfo.GetElementSummaryToCsv()
 

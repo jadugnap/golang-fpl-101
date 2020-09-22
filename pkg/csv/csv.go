@@ -77,7 +77,7 @@ func appendEachRow(writer *csv.Writer, headerTypes []reflect.Type, row interface
 		case stringType:
 			allColumns = append(allColumns, v.Field(i).String())
 		default:
-			log.Panic("csv.StructSlice() only accept bool, float, int, or string. headerType:", headerTypes[i])
+			log.Panic("csv.StructSlice() only accept bool, int, or string. headerType:", headerTypes[i])
 		}
 	}
 	err := writer.Write(allColumns)

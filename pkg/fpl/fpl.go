@@ -22,12 +22,14 @@ var (
 
 // FPL for main fpl information
 type FPL struct {
-	Client         client.GenericClient
-	Res            Response
-	Team2Player    map[string][]team.Player
-	Team           string
-	Players        []team.Player
-	Team2Gw2Points map[string]map[int]int
+	Client            client.GenericClient
+	Res               Response
+	Team2Player       map[string][]team.Player
+	Team              string
+	Players           []team.Player
+	Team2Gw2Points    map[string]map[int]int
+	Team2TotalForm    map[string]float64
+	Player2Proportion map[string]float64
 }
 
 // Response from api/bootstrap-static/
@@ -126,8 +128,8 @@ type TopElementInfo struct {
 	Points int `json:"points"`
 }
 
-// GetFplResponseToCsv from api/bootstrap-static/
-func (f *FPL) GetFplResponseToCsv() {
+// GetFplResponse from api/bootstrap-static/
+func (f *FPL) GetFplResponse() {
 	start := time.Now()
 	defer func() {
 		log.Printf("Took %v to GetResponse from %v\n", time.Since(start), f.Client.Endpoint)
@@ -140,23 +142,13 @@ func (f *FPL) GetFplResponseToCsv() {
 	}
 
 	f.fillPlayersPerTeam()
-
-	// for team, players := range f.Team2Player {
-	// 	f.Team = team
-	// 	f.Players = players
-	// 	f.addSummaryRow()
-	// 	teamPrefix := fmt.Sprintf("fpl-players/%+v", team)
-	// 	csv.StructSlice(f.Players, teamPrefix)
-	// }
-	// csv.StructSlice(f.Res.Players, "fpl-players/allteam")
-	// csv.StructSlice(f.Res.PlayerRoles, "fpl-roles")
-	// csv.StructSlice(f.Res.Teams, "fpl-teams")
 	return
 }
 
 // ToCsv from Fpl Response info
 func (f *FPL) ToCsv() {
-	// f.fillOpponentPoints()
+	// empty out f.Res.Players and refill
+	f.Res.Players = []team.Player{}
 	for team, players := range f.Team2Player {
 		f.Team = team
 		f.Players = players
@@ -164,7 +156,7 @@ func (f *FPL) ToCsv() {
 		teamPrefix := fmt.Sprintf("fpl-players/%+v", team)
 		csv.StructSlice(f.Players, teamPrefix)
 	}
-	csv.StructSlice(f.Res.Players, "fpl-players/allteam")
+	csv.StructSlice(f.Res.Players, "fpl-players/allplayers")
 	csv.StructSlice(f.Res.PlayerRoles, "fpl-roles")
 	csv.StructSlice(f.Res.Teams, "fpl-teams")
 	return
@@ -174,6 +166,7 @@ func (f *FPL) ToCsv() {
 // input: *FPL
 func (f *FPL) fillPlayersPerTeam() {
 	f.Team2Player = make(map[string][]team.Player)
+	f.Player2Proportion = make(map[string]float64)
 	for i, p := range f.Res.Players {
 		playerName := pb.Player_Webname_name[int32(p.ID)]
 		teamName := pb.Team_Shortname_name[int32(p.TeamID)]
@@ -189,6 +182,26 @@ func (f *FPL) fillPlayersPerTeam() {
 			// for existing team, append struct
 			f.Team2Player[teamName] = append(existingSlice, f.Res.Players[i])
 		}
+
+	}
+
+	f.Team2TotalForm = make(map[string]float64)
+	for team, players := range f.Team2Player {
+		for _, p := range players {
+			pForm, _ := strconv.ParseFloat(p.Form, 64)
+			if _, ok := f.Team2TotalForm[team]; !ok {
+				// for new team, init new slice & assign int
+				f.Team2TotalForm[team] = pForm
+			} else {
+				// for existing team, sum up int
+				f.Team2TotalForm[team] += pForm
+			}
+		}
+	}
+
+	for _, p := range f.Res.Players {
+		pForm, _ := strconv.ParseFloat(p.Form, 64)
+		f.Player2Proportion[p.WebName] = 100 * float64(pForm) / float64(f.Team2TotalForm[p.TeamName])
 	}
 }
 
@@ -208,6 +221,7 @@ func (f *FPL) addSummaryRow() {
 		RoleID:   0,
 		// PlayerCount:        "-1",
 		// RegularPlayerCount: "-1",
+		// FormProportion:     "-1",
 		// PointsPerGame:      "-1",
 		// OppPointsPerGame:   "-1",
 		// Form:               "-1",
@@ -232,8 +246,6 @@ func (f *FPL) addSummaryRow() {
 	// for float, convert strings => sum up all floats => string
 	tempIctIndex := 0.0
 	tempForm := 0.0
-	// pCount := 0.0
-	// rpCount := 0.0
 	for _, player := range f.Players {
 		if player.Minutes <= 0 {
 			continue
@@ -258,8 +270,13 @@ func (f *FPL) addSummaryRow() {
 	summary.OppPointsPerGame = fmt.Sprintf("%.2f", oppTotalPoints/matchPlayed)
 	summary.PointsPerGame = fmt.Sprintf("%.2f", float64(summary.TotalPoints)/matchPlayed)
 
+	// f.fillPointsProportion()
+	for i, p := range f.Players {
+		f.Players[i].FormProportion = fmt.Sprintf("%.2f", f.Player2Proportion[p.WebName])
+	}
 	f.Players = append([]team.Player{summary}, f.Players...)
-	f.Res.Players = append([]team.Player{summary}, f.Res.Players...)
+	f.Res.Players = append(f.Res.Players, f.Players...)
+	// f.Res.Players = append([]team.Player{summary}, f.Res.Players...)
 	return
 }
 

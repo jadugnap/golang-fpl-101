@@ -109,6 +109,7 @@ type Player struct {
 	RegularPlayerCount int
 	PointsPerGame      string `json:"points_per_game"`
 	OppPointsPerGame   string
+	FormProportion     string
 	Form               string `json:"form"`
 	TotalPoints        int    `json:"total_points"`
 	ValueForm          string `json:"value_form"`
